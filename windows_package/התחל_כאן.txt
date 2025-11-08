@@ -1,20 +1,53 @@
-מעבד PDF - Windows
-==================
+╔══════════════════════════════════════════════════════════╗
+║           מעבד PDF - הנחיות בנייה לWindows              ║
+╚══════════════════════════════════════════════════════════╝
 
-1. לחץ פעמיים: build_all_windows.bat
-2. המתן 2-5 דקות
-3. הקובץ מוכן: dist\PDF_Processor.exe
+📋 שלבים:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-העתק את PDF_Processor.exe לכל מחשב Windows והרץ.
+שלב 1: התקן דרישות (פעם ראשונה בלבד)
+   ✓ Python 3.9+ → https://www.python.org/downloads/
+     (סמן ✓ "Add Python to PATH" בהתקנה!)
+   
+   ✓ Inno Setup → https://jrsoftware.org/isdl.php
+     (צריך רק אם רוצה ליצור קובץ התקנה מקצועי)
 
----
+שלב 2: הרץ בניה
+   ⚡ לחץ פעמיים על: build_all_windows.bat
+   ⏱ המתן 2-5 דקות
 
-דרישות:
-- Windows 10/11
-- Python 3.9+ (אם אין: python.org/downloads)
+שלב 3: התוצר
+   📦 installer_output\PDF_Processor_Setup.exe
+   
+   זהו! עכשיו תוכל להפיץ את קובץ ההתקנה הזה 
+   לכל משתמש Windows - הוא יתקין הכל אוטומטית.
 
-בעיות?
-- "Module not found" → pip install -r requirements_windows.txt
-- Windows Defender חוסם → הוסף חריגה
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-זהו!
+💡 שימושים נפוצים:
+
+🔸 הפצה למשתמשים סופיים:
+   שלח להם: PDF_Processor_Setup.exe
+   הם פשוט מריצים - הכל אוטומטי!
+   ⚠ הם לא צריכים Python!
+
+🔸 בדיקה מהירה:
+   אם אין Inno Setup, השתמש ב: dist\PDF_Processor.exe
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❓ בעיות?
+
+⚠ "Python לא מותקן"
+   → התקן Python + סמן "Add Python to PATH"
+
+⚠ "Inno Setup לא נמצא"
+   → אפשרות 1: התקן Inno Setup והרץ שוב
+   → אפשרון 2: השתמש רק ב-EXE מתוך dist\
+
+⚠ Windows Defender חוסם
+   → זה נורמלי - אישור חריגה (קובץ חדש)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+תמיכה: github.com/[your-repo]

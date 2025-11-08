@@ -76,5 +76,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo.
+echo Application started. You can close this window.
+pause
 exit /b 0
 

@@ -1,20 +1,14 @@
 # מעבד PDF לדוחות רפואיים
 
-## הרצה על Mac
+## התקנה והרצה
 
-```bash
-source venv314/bin/activate
-python3 pdf_batch_gui.py
-```
+1. לחץ על הכפתור הירוק **Code** ↗
+2. בחר **Download ZIP**
+3. חלץ את הקובץ לתיקיה במחשב
+4. היכנס לתיקיה `Windows`
+5. לחץ פעמיים על `Start.bat`
 
-## הרצה על Windows
-
-```cmd
-cd windows_package
-build_all_windows.bat
-```
-
-התוצאה: `dist\PDF_Processor.exe`
+זהו! התוכנית תתחיל אוטומטית.
 
 ---
 

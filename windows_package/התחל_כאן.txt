@@ -1,0 +1,20 @@
+מעבד PDF - Windows
+==================
+
+1. לחץ פעמיים: build_all_windows.bat
+2. המתן 2-5 דקות
+3. הקובץ מוכן: dist\PDF_Processor.exe
+
+העתק את PDF_Processor.exe לכל מחשב Windows והרץ.
+
+---
+
+דרישות:
+- Windows 10/11
+- Python 3.9+ (אם אין: python.org/downloads)
+
+בעיות?
+- "Module not found" → pip install -r requirements_windows.txt
+- Windows Defender חוסם → הוסף חריגה
+
+זהו!

@@ -30,6 +30,47 @@ def is_valid_folder_name(name):
     pattern = r'^[\u0590-\u05FF]{2}\d{3}$'
     return bool(re.match(pattern, name))
 
+#
+# Split-folder support
+#
+# Supported names:
+# - Base folder:      שתי אותיות עבריות + 3 ספרות, לדוגמה: "ננ449"
+# - Split parts:      אותו בסיס + אות עברית בסוף, לדוגמה: "ננ449א", "ננ449ב"
+#
+BASE_PATTERN = r'^[\u0590-\u05FF]{2}\d{3}$'
+SPLIT_PATTERN = r'^([\u0590-\u05FF]{2}\d{3})([\u0590-\u05FF])$'
+
+
+def parse_folder_name(name):
+    """
+    Parse a folder name into (base, suffix).
+    - "ננ449"  -> ("ננ449", None)
+    - "ננ449א" -> ("ננ449", "א")
+    Returns (None, None) if not matching supported patterns.
+    """
+    m = re.match(SPLIT_PATTERN, name)
+    if m:
+        return m.group(1), m.group(2)
+    if re.match(BASE_PATTERN, name):
+        return name, None
+    return None, None
+
+
+HEBREW_ORDER = 'אבגדהוזחטיכלמנסעפצקרשת'
+
+
+def hebrew_suffix_key(suffix):
+    """
+    Provide an order index for a Hebrew letter suffix.
+    Non-existent or unknown suffixes are sorted last.
+    """
+    if not suffix:
+        return len(HEBREW_ORDER) + 1
+    try:
+        return HEBREW_ORDER.index(suffix)
+    except ValueError:
+        return len(HEBREW_ORDER) + 1
+
 
 def find_matching_pdf(folder_path, folder_name):
     """
@@ -209,8 +250,62 @@ def process_folder(folder_path, folder_name):
         return False
 
 
+def process_split_group(mother_folder, base_name, parts):
+    """
+    Process a split group of folders sharing the same base (e.g., ננ449א, ננ449ב).
+    - Creates individual *_CLEANED.txt in each part folder
+    - Merges all texts (ordered by Hebrew suffix) into base_cleaned_merged.txt in the mother folder
+    """
+    print(f"\n{'-'*60}")
+    print(f"🔗 Split detected for base: {base_name}")
+    print(f"{'-'*60}")
+
+    texts = []
+    any_success = False
+    parts_sorted = sorted(parts, key=lambda p: hebrew_suffix_key(p.get('suffix')))
+
+    for part in parts_sorted:
+        part_path = part['path']
+        part_name = part['name']
+        pdf_path = find_matching_pdf(part_path, part_name)
+
+        if not pdf_path:
+            print(f"  ❌ PDF not found for {part_name}")
+            continue
+
+        try:
+            print(f"  📖 Reading {part_name}...")
+            cleaned = clean_and_structure_pdf(pdf_path)
+            print(f"  🔄 Fixing Hebrew for {part_name}...")
+            fixed = reverse_hebrew_in_text(cleaned)
+
+            out_individual = os.path.join(part_path, f"{part_name}_CLEANED.txt")
+            with open(out_individual, 'w', encoding='utf-8') as f:
+                f.write(fixed)
+            print(f"  ✅ Saved {os.path.basename(out_individual)}")
+
+            texts.append(fixed)
+            any_success = True
+        except Exception as e:
+            print(f"  ❌ Error processing {part_name}: {str(e)}")
+
+    if len(texts) >= 2:
+        merged = "\n\n".join(texts)
+        merged_name = f"{base_name}_cleaned_merged.txt"
+        merged_path = os.path.join(mother_folder, merged_name)
+        with open(merged_path, 'w', encoding='utf-8') as f:
+            f.write(merged)
+        print(f"💾 Merged saved: {merged_path}")
+        return True
+    elif any_success:
+        print("⚠ Only one part processed; merged file not created.")
+        return True
+    else:
+        return False
+
+
 def batch_process(mother_folder):
-    """Process all folders in mother folder"""
+    """Process all folders in mother folder (supports split groups like ננ449א/ננ449ב)"""
     
     print("\n" + "="*60)
     print("🏥 PDF Medical Report Batch Processor")
@@ -221,52 +316,68 @@ def batch_process(mother_folder):
         print(f"❌ Error: Folder not found: {mother_folder}")
         return
     
-    # Find all valid folders
+    # Discover folders and group by base name (supporting split suffix)
     all_items = os.listdir(mother_folder)
-    valid_folders = []
+    groups = {}  # base -> list of parts dicts
     
     for item in all_items:
         item_path = os.path.join(mother_folder, item)
-        if os.path.isdir(item_path) and is_valid_folder_name(item):
-            valid_folders.append((item_path, item))
+        if not os.path.isdir(item_path):
+            continue
+        base, suffix = parse_folder_name(item)
+        if base:
+            groups.setdefault(base, []).append({'path': item_path, 'name': item, 'suffix': suffix})
     
-    if not valid_folders:
+    if not groups:
         print("❌ No valid folders found!")
-        print("   Looking for folders named: 2 Hebrew letters + 3 digits")
-        print("   Example: אה456, בל123, גר789")
+        print("   Looking for folders named: 2 Hebrew letters + 3 digits (and optional Hebrew suffix)")
+        print("   Example: אה456, ננ449א, ננ449ב")
         return
     
-    print(f"Found {len(valid_folders)} folders to process:")
-    for _, name in valid_folders:
-        print(f"  • {name}")
+    total_groups = len(groups)
+    print(f"Found {sum(len(v) for v in groups.values())} folders in {total_groups} group(s):")
+    for base, parts in sorted(groups.items()):
+        if len(parts) >= 2:
+            part_names = ", ".join(p['name'] for p in sorted(parts, key=lambda p: hebrew_suffix_key(p.get('suffix'))))
+            print(f"  • {base} → [{part_names}] (split)")
+        else:
+            print(f"  • {parts[0]['name']}")
     
     print("\n" + "="*60)
     print("🚀 Starting batch processing...")
     print("="*60)
     
-    # Process each folder
     success_count = 0
     failed_count = 0
     
-    for i, (folder_path, folder_name) in enumerate(valid_folders, 1):
-        print(f"\n[{i}/{len(valid_folders)}] Processing folder: {folder_name}")
-        
-        if process_folder(folder_path, folder_name):
-            success_count += 1
+    for i, (base, parts) in enumerate(sorted(groups.items()), 1):
+        if len(parts) == 1 and parts[0]['suffix'] is None:
+            folder_path = parts[0]['path']
+            folder_name = parts[0]['name']
+            print(f"\n[{i}/{total_groups}] Processing folder: {folder_name}")
+            if process_folder(folder_path, folder_name):
+                success_count += 1
+            else:
+                failed_count += 1
         else:
-            failed_count += 1
+            print(f"\n[{i}/{total_groups}] Processing split group: {base}")
+            if process_split_group(mother_folder, base, parts):
+                success_count += 1
+            else:
+                failed_count += 1
     
     # Final summary
     print("\n" + "="*60)
     print("📊 BATCH PROCESSING COMPLETE")
     print("="*60)
-    print(f"\n✅ Successful: {success_count}")
-    print(f"❌ Failed: {failed_count}")
-    print(f"📁 Total folders: {len(valid_folders)}")
+    print(f"\n✅ Successful groups: {success_count}")
+    print(f"❌ Failed groups: {failed_count}")
+    print(f"📁 Total groups: {total_groups}")
     
     if success_count > 0:
         print(f"\n💾 Cleaned files saved in their respective folders")
         print(f"   Format: [folder_name]_CLEANED.txt")
+        print(f"   Merged (when applicable): [base]_cleaned_merged.txt in the mother folder")
     
     print("\n🎉 Done!\n")
 

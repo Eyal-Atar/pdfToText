@@ -17,7 +17,8 @@ from pdf_batch_processor import (
     is_valid_folder_name,
     find_matching_pdf,
     clean_and_structure_pdf,
-    reverse_hebrew_in_text
+    reverse_hebrew_in_text,
+    parse_folder_name
 )
 
 
@@ -493,7 +494,10 @@ class CursorStyleGUI:
             
             for item in all_items:
                 item_path = os.path.join(mother_folder, item)
-                if os.path.isdir(item_path) and is_valid_folder_name(item):
+                if not os.path.isdir(item_path):
+                    continue
+                base, suffix = parse_folder_name(item)
+                if base:
                     pdf_path = find_matching_pdf(item_path, item)
                     pdf_name = f"{item}.pdf" if pdf_path else "❌ לא נמצא"
                     
@@ -572,6 +576,16 @@ class CursorStyleGUI:
                 folder['selected'] = new_state
         
         self.update_tree()
+    
+    def hebrew_suffix_key(self, suffix):
+        """Order index for Hebrew letter suffix; unknown/None are last"""
+        order = 'אבגדהוזחטיכלמנסעפצקרשת'
+        if not suffix:
+            return len(order) + 1
+        try:
+            return order.index(suffix)
+        except ValueError:
+            return len(order) + 1
     
     def edit_pdf_name(self):
         """Edit PDF name"""
@@ -687,6 +701,37 @@ class CursorStyleGUI:
                 except Exception as e:
                     self.log_message(f"  ❌ {str(e)}\n", 'error')
                     failed += 1
+            
+            # Attempt merge for split groups among the selected items
+            try:
+                groups = {}
+                for folder_data in selected:
+                    base, suffix = parse_folder_name(folder_data['name'])
+                    if base:
+                        groups.setdefault(base, []).append({
+                            'path': folder_data['path'],
+                            'name': folder_data['name'],
+                            'suffix': suffix
+                        })
+                
+                for base, parts in groups.items():
+                    if len(parts) >= 2:
+                        parts_sorted = sorted(parts, key=lambda p: self.hebrew_suffix_key(p.get('suffix')))
+                        texts = []
+                        for part in parts_sorted:
+                            cleaned_path = os.path.join(part['path'], f"{part['name']}_CLEANED.txt")
+                            if os.path.exists(cleaned_path):
+                                with open(cleaned_path, 'r', encoding='utf-8') as f:
+                                    texts.append(f.read())
+                        if len(texts) >= 2:
+                            mother = os.path.dirname(parts_sorted[0]['path'])
+                            merged_name = f"{base}_cleaned_merged.txt"
+                            merged_path = os.path.join(mother, merged_name)
+                            with open(merged_path, 'w', encoding='utf-8') as f:
+                                f.write("\n\n".join(texts))
+                            self.log_message(f"\n  💾 נוצר קובץ מיזוג: {merged_name}\n", 'success')
+            except Exception as merge_err:
+                self.log_message(f"\n  ⚠ שגיאה במיזוג: {str(merge_err)}\n", 'warning')
             
             self.log_message("\n" + "═" * 60 + "\n")
             self.log_message("סיכום\n", 'info')

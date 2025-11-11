@@ -91,6 +91,27 @@ def find_matching_pdf(folder_path, folder_name):
     return None
 
 
+def find_split_part_pdfs(folder_path, base_name):
+    """
+    Find split part PDFs that live inside a single base folder.
+    Example files inside folder 'ננ449': 'ננ449א.pdf', 'ננ449ב.pdf', ...
+    Returns list of dicts: { 'suffix': 'א', 'path': full_path, 'name': filename }
+    """
+    results = []
+    pattern = re.compile(rf'^{re.escape(base_name)}([\u0590-\u05FF])\.pdf$', re.IGNORECASE)
+    try:
+        for file in os.listdir(folder_path):
+            m = pattern.match(file)
+            if m:
+                suffix = m.group(1)
+                if suffix == 'מ':  # exclude special 'mem' files
+                    continue
+                results.append({'suffix': suffix, 'path': os.path.join(folder_path, file), 'name': file})
+    except FileNotFoundError:
+        pass
+    return results
+
+
 def clean_and_structure_pdf(input_pdf_path):
     """Clean and structure PDF text"""
     
@@ -217,8 +238,40 @@ def process_folder(folder_path, folder_name):
     pdf_path = find_matching_pdf(folder_path, folder_name)
     
     if not pdf_path:
-        print(f"❌ PDF not found: {folder_name}.pdf")
-        return False
+        # Try to detect split PDFs inside the same folder (e.g., ננ449א.pdf, ננ449ב.pdf)
+        part_pdfs = find_split_part_pdfs(folder_path, folder_name)
+        if len(part_pdfs) >= 2:
+            print(f"🔎 Found split parts in folder: {', '.join(p['name'] for p in part_pdfs)}")
+            texts = []
+            success = False
+            for part in sorted(part_pdfs, key=lambda p: hebrew_suffix_key(p.get('suffix'))):
+                try:
+                    print(f"  📖 Reading {part['name']}...")
+                    cleaned = clean_and_structure_pdf(part['path'])
+                    print(f"  🔄 Fixing Hebrew for {part['name']}...")
+                    fixed = reverse_hebrew_in_text(cleaned)
+                    # Save individual cleaned
+                    part_base = f"{folder_name}{part['suffix']}"
+                    out_individual = os.path.join(folder_path, f"{part_base}_CLEANED.txt")
+                    with open(out_individual, 'w', encoding='utf-8') as f:
+                        f.write(fixed)
+                    print(f"  ✅ Saved {os.path.basename(out_individual)}")
+                    texts.append(fixed)
+                    success = True
+                except Exception as e:
+                    print(f"  ❌ Error processing {part['name']}: {str(e)}")
+            if len(texts) >= 2:
+                merged = "\n\n".join(texts)
+                merged_name = f"{folder_name}_cleaned_merged.txt"
+                # Save merged into the same folder where parts were found
+                merged_path = os.path.join(folder_path, merged_name)
+                with open(merged_path, 'w', encoding='utf-8') as f:
+                    f.write(merged)
+                print(f"💾 Merged saved: {merged_path}")
+            return success
+        else:
+            print(f"❌ PDF not found: {folder_name}.pdf")
+            return False
     
     print(f"✓ Found PDF: {os.path.basename(pdf_path)}")
     
@@ -262,6 +315,8 @@ def process_split_group(mother_folder, base_name, parts):
 
     texts = []
     any_success = False
+    # Exclude special 'mem' suffix
+    parts = [p for p in parts if p.get('suffix') != 'מ']
     parts_sorted = sorted(parts, key=lambda p: hebrew_suffix_key(p.get('suffix')))
 
     for part in parts_sorted:
@@ -292,7 +347,9 @@ def process_split_group(mother_folder, base_name, parts):
     if len(texts) >= 2:
         merged = "\n\n".join(texts)
         merged_name = f"{base_name}_cleaned_merged.txt"
-        merged_path = os.path.join(mother_folder, merged_name)
+        # Save merged into the first part's folder (origin folder), not the mother folder
+        dest_dir = parts_sorted[0]['path']
+        merged_path = os.path.join(dest_dir, merged_name)
         with open(merged_path, 'w', encoding='utf-8') as f:
             f.write(merged)
         print(f"💾 Merged saved: {merged_path}")
@@ -326,6 +383,8 @@ def batch_process(mother_folder):
             continue
         base, suffix = parse_folder_name(item)
         if base:
+            if suffix == 'מ':  # exclude special mem-suffix folders
+                continue
             groups.setdefault(base, []).append({'path': item_path, 'name': item, 'suffix': suffix})
     
     if not groups:

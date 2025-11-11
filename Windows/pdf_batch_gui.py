@@ -18,7 +18,8 @@ from pdf_batch_processor import (
     find_matching_pdf,
     clean_and_structure_pdf,
     reverse_hebrew_in_text,
-    parse_folder_name
+    parse_folder_name,
+    find_split_part_pdfs
 )
 
 
@@ -321,7 +322,7 @@ class CursorStyleGUI:
         # Info
         info = tk.Label(
             content,
-            text="תיקיות בפורמט: 2 אותיות עבריות + 3 ספרות (דוגמה: אה456)",
+            text="תיקיות בפורמט: 2 אותיות עבריות + 3 ספרות או עם אות נוספת בסוף (דוגמה: אה456, ננ478א)",
             font=('Arial', 10),
             bg=self.COLORS['card'],
             fg=self.COLORS['text_muted'],
@@ -499,14 +500,23 @@ class CursorStyleGUI:
                 base, suffix = parse_folder_name(item)
                 if base:
                     pdf_path = find_matching_pdf(item_path, item)
-                    pdf_name = f"{item}.pdf" if pdf_path else "❌ לא נמצא"
+                    part_pdfs = [] if pdf_path else find_split_part_pdfs(item_path, item)
+                    if pdf_path:
+                        pdf_name = f"{item}.pdf"
+                        pdf_exists = True
+                    elif len(part_pdfs) >= 2:
+                        pdf_name = f"חלקים: {len(part_pdfs)}"
+                        pdf_exists = True
+                    else:
+                        pdf_name = "❌ לא נמצא"
+                        pdf_exists = False
                     
                     self.folders_data.append({
                         'path': item_path,
                         'name': item,
                         'selected': True,
                         'pdf_name': pdf_name,
-                        'pdf_exists': pdf_path is not None
+                        'pdf_exists': pdf_exists
                     })
             
             if self.folders_data:
@@ -678,25 +688,43 @@ class CursorStyleGUI:
                 try:
                     pdf_path = os.path.join(folder_path, pdf_name)
                     
-                    if not os.path.exists(pdf_path):
-                        self.log_message(f"  ❌ לא נמצא\n", 'error')
-                        failed += 1
-                        continue
-                    
-                    self.log_message(f"  📖 קורא...\n")
-                    cleaned = clean_and_structure_pdf(pdf_path)
-                    
-                    self.log_message(f"  🔄 מתקן עברית...\n")
-                    fixed = reverse_hebrew_in_text(cleaned)
-                    
-                    output = f"{folder_name}_CLEANED.txt"
-                    output_path = os.path.join(folder_path, output)
-                    
-                    with open(output_path, 'w', encoding='utf-8') as f:
-                        f.write(fixed)
-                    
-                    self.log_message(f"  ✅ הושלם\n", 'success')
-                    success += 1
+                    if os.path.exists(pdf_path):
+                        self.log_message(f"  📖 קורא...\n")
+                        cleaned = clean_and_structure_pdf(pdf_path)
+                        self.log_message(f"  🔄 מתקן עברית...\n")
+                        fixed = reverse_hebrew_in_text(cleaned)
+                        output = f"{folder_name}_CLEANED.txt"
+                        output_path = os.path.join(folder_path, output)
+                        with open(output_path, 'w', encoding='utf-8') as f:
+                            f.write(fixed)
+                        self.log_message(f"  ✅ הושלם\n", 'success')
+                        success += 1
+                    else:
+                        # Try split parts inside the same folder
+                        parts = find_split_part_pdfs(folder_path, folder_name)
+                        if len(parts) >= 2:
+                            self.log_message(f"  📑 נמצאו {len(parts)} חלקים\n")
+                            texts = []
+                            for part in sorted(parts, key=lambda p: self.hebrew_suffix_key(p.get('suffix'))):
+                                self.log_message(f"    📖 {part['name']}\n")
+                                cleaned = clean_and_structure_pdf(part['path'])
+                                fixed = reverse_hebrew_in_text(cleaned)
+                                part_base = f"{folder_name}{part['suffix']}"
+                                out_individual = os.path.join(folder_path, f"{part_base}_CLEANED.txt")
+                                with open(out_individual, 'w', encoding='utf-8') as f:
+                                    f.write(fixed)
+                                texts.append(fixed)
+                            # Merge
+                            merged_name = f"{folder_name}_cleaned_merged.txt"
+                            # Save merged into the same folder where parts were found
+                            merged_path = os.path.join(folder_path, merged_name)
+                            with open(merged_path, 'w', encoding='utf-8') as f:
+                                f.write("\n\n".join(texts))
+                            self.log_message(f"  💾 נוצר קובץ מיזוג: {merged_name}\n", 'success')
+                            success += 1
+                        else:
+                            self.log_message(f"  ❌ לא נמצא\n", 'error')
+                            failed += 1
                     
                 except Exception as e:
                     self.log_message(f"  ❌ {str(e)}\n", 'error')
@@ -707,7 +735,7 @@ class CursorStyleGUI:
                 groups = {}
                 for folder_data in selected:
                     base, suffix = parse_folder_name(folder_data['name'])
-                    if base:
+                    if base and suffix != 'מ':
                         groups.setdefault(base, []).append({
                             'path': folder_data['path'],
                             'name': folder_data['name'],
@@ -724,9 +752,10 @@ class CursorStyleGUI:
                                 with open(cleaned_path, 'r', encoding='utf-8') as f:
                                     texts.append(f.read())
                         if len(texts) >= 2:
-                            mother = os.path.dirname(parts_sorted[0]['path'])
+                            # Save merged into the first part's folder (origin folder)
+                            dest_dir = parts_sorted[0]['path']
                             merged_name = f"{base}_cleaned_merged.txt"
-                            merged_path = os.path.join(mother, merged_name)
+                            merged_path = os.path.join(dest_dir, merged_name)
                             with open(merged_path, 'w', encoding='utf-8') as f:
                                 f.write("\n\n".join(texts))
                             self.log_message(f"\n  💾 נוצר קובץ מיזוג: {merged_name}\n", 'success')
